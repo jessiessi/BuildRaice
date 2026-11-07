@@ -1,0 +1,26 @@
+name: BuildRaice
+version: '${version}'
+main: com.jessiessi.buildraice.BuildRaicePlugin
+api-version: '1.21.11'
+description: Flache Bauwelt mit 32x32-Plots im Creative
+author: JessiEssi
+commands:
+  plot:
+    description: Zu deinem Plot teleportieren oder Plot-Infos anzeigen
+    usage: /plot [info]
+  build:
+    description: Holt alle aus der Box und startet die Runde mit Wänden und Bossbar
+    usage: /build <Gegenstand> <Minuten>
+    permission: buildraice.build
+  ende:
+    description: Beendet das Spiel und veröffentlicht die Bestenliste
+    usage: /ende
+    permission: buildraice.ende
+  bestenliste:
+    description: Zeigt die Gesamtpunkte aller Runden
+    usage: /bestenliste
+permissions:
+  buildraice.build:
+    default: op
+  buildraice.ende:
+    default: op

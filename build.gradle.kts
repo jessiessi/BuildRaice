@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.jessiessi"
-version = "0.1.0"
+version = "0.1.1"
 
 repositories {
     mavenCentral()
@@ -12,19 +12,19 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper:paper-api:26.3.build.244-stable")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
 }
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
-    options.release.set(21)
+    options.release.set(25)
 }
 
 tasks.processResources {
@@ -39,6 +39,6 @@ tasks.test {
 
 // Lokaler Testserver im Ordner run/, inklusive frisch gebautem Plugin.
 tasks.runServer {
-    minecraftVersion("1.21.11")
+    minecraftVersion("26.3")
     jvmArgs("-Xms1G", "-Xmx2G")
 }

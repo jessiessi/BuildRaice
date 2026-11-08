@@ -1,9 +1,6 @@
 package com.jessiessi.buildraice;
 
-import org.bukkit.Difficulty;
-import org.bukkit.GameRules;
-import org.bukkit.World;
-import org.bukkit.WorldCreator;
+import org.bukkit.*;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -52,7 +49,6 @@ public final class BuildRaicePlugin extends JavaPlugin {
         Objects.requireNonNull(world, "Bauwelt konnte nicht erstellt werden");
 
         world.setDifficulty(Difficulty.PEACEFUL);
-        world.setSpawnFlags(false, false);
         world.setStorm(false);
         world.setTime(6000);
         world.setGameRule(GameRules.PVP, false);
@@ -63,6 +59,8 @@ public final class BuildRaicePlugin extends JavaPlugin {
         world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
         world.setGameRule(GameRules.RANDOM_TICK_SPEED, 0);
         world.setGameRule(GameRules.SHOW_ADVANCEMENT_MESSAGES, false);
+        world.setGameRule(GameRules.SPAWN_MOBS, false);
+        world.setGameRule(GameRules.SPAWN_MONSTERS, false);
         LobbyBox.build(world);
         return world;
     }

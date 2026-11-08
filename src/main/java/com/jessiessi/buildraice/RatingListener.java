@@ -8,7 +8,10 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 
-/** Nimmt die Hotbar-Tasten als Stimmen an und hält die Abstimm-Items an ihrem Platz. */
+/**
+ * Nimmt die Hotbar-Tasten als Stimmen an und hält die Abstimm-Items an ihrem Platz. Der Slotwechsel
+ * selbst wird abgelehnt, damit niemand mit einem Block in der Hand gesehen wird.
+ */
 public final class RatingListener implements Listener {
 
     private final GameManager game;
@@ -21,6 +24,7 @@ public final class RatingListener implements Listener {
     public void onHotbarKey(PlayerItemHeldEvent event) {
         if (game.tour() != null) {
             game.tour().vote(event.getPlayer(), event.getNewSlot());
+            event.setCancelled(true);
         }
     }
 

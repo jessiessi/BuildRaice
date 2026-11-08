@@ -7,6 +7,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.Openable;
 import org.bukkit.block.data.type.Bed;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
@@ -167,7 +168,7 @@ public final class PlotProtectionListener implements Listener {
             return;
         }
         Player player = event.getPlayer();
-        if (ownsBlock(player, clicked)) {
+        if (ownsBlock(player, clicked) || opensDoorOnViewedPlot(event, clicked)) {
             return;
         }
         // Gegen den Wegrand klicken, um auf dem eigenen Plot zu bauen, bleibt erlaubt.
@@ -177,6 +178,15 @@ public final class PlotProtectionListener implements Listener {
         if (!buildsIntoOwnPlot) {
             event.setCancelled(true);
         }
+    }
+
+    /** Bei der Bewertung lassen sich Türen, Falltüren und Zauntore auf dem besuchten Plot öffnen. */
+    private boolean opensDoorOnViewedPlot(PlayerInteractEvent event, Block clicked) {
+        Plot viewed = game.viewedPlot();
+        return viewed != null
+                && event.getAction() == Action.RIGHT_CLICK_BLOCK
+                && clicked.getBlockData() instanceof Openable
+                && viewed.equals(PlotGrid.plotAt(clicked.getX(), clicked.getZ()));
     }
 
     // --- Spieler verändern Entities ---

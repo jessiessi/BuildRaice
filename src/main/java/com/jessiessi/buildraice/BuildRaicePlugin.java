@@ -24,6 +24,7 @@ public final class BuildRaicePlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlotProtectionListener(plots, game), this);
         getServer().getPluginManager().registerEvents(new PlayerListener(plots, game), this);
         getServer().getPluginManager().registerEvents(new RatingListener(game), this);
+        getServer().getPluginManager().registerEvents(new FloorListener(this, game), this);
 
         PlotCommand plotCommand = new PlotCommand(plots, game);
         PluginCommand command = Objects.requireNonNull(getCommand("plot"));

@@ -7,13 +7,18 @@ import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Der Spielablauf, Runde für Runde: Box, /build, Bewertung, dann geleerte Plots und zurück
@@ -29,6 +34,8 @@ public final class GameManager {
     private final PlotManager plots;
     private final Leaderboard leaderboard;
     private final Deque<Runnable> pendingWork = new ArrayDeque<>();
+    /** Plots mit geändertem Boden. Alle anderen haben noch Gras. */
+    private final Map<Plot, Material> floors = new HashMap<>();
     private final BukkitTask workTask;
 
     private boolean wallsUp;
@@ -78,6 +85,36 @@ public final class GameManager {
         return tour;
     }
 
+    /** Der Plot, auf dem während der Bewertung alle stehen, sonst null. */
+    public Plot viewedPlot() {
+        return tour != null ? tour.currentPlot() : null;
+    }
+
+    /** Öffnet die Boden-Auswahl, solange der Spieler auf seinem Plot bauen darf. */
+    public void openFloorMenu(Player player) {
+        Plot plot = plots.plotOf(player.getUniqueId());
+        if (plot == null || bossBar == null) {
+            player.sendActionBar(Component.text("Den Boden kannst du nur während der Bauzeit ändern.",
+                    NamedTextColor.RED));
+            return;
+        }
+        FloorSelector.openMenu(player, floors.getOrDefault(plot, FloorSelector.DEFAULT_FLOOR));
+    }
+
+    public void changeFloor(Player player, Material material) {
+        Plot plot = plots.plotOf(player.getUniqueId());
+        if (plot == null || bossBar == null) {
+            return;
+        }
+        Material current = floors.getOrDefault(plot, FloorSelector.DEFAULT_FLOOR);
+        if (current != material) {
+            FloorSelector.replace(plots.world(), plot, current, material);
+            floors.put(plot, material);
+        }
+        player.sendActionBar(Component.text("Neuer Boden: ", NamedTextColor.GREEN)
+                .append(Component.translatable(material)));
+    }
+
     /** Gibt dem Spieler seinen Plot und bringt ihn dorthin. */
     public void assignPlot(Player player) {
         Plot plot = plots.claim(player.getUniqueId());
@@ -88,6 +125,7 @@ public final class GameManager {
         leaderboard.showTo(player);
         player.teleport(plots.homeOf(plot));
         player.setGameMode(GameMode.CREATIVE);
+        FloorSelector.giveTool(player);
         player.sendMessage(Component.text("Das ist dein Plot, nur hier kannst du bauen.", NamedTextColor.GREEN));
     }
 
@@ -167,12 +205,32 @@ public final class GameManager {
         bossBar.progress(Math.clamp((float) remaining / durationMillis, 0f, 1f));
     }
 
+    /** Die Wände bleiben bis zum Leeren stehen, bewertet werden nur bebaute Plots. */
     private void finishRound() {
         stopRound();
         Bukkit.getServer().sendMessage(Component.text(
                 "Die Zeit ist um! Die Runde ist beendet.", NamedTextColor.GOLD));
-        queueWallRemoval();
-        tour = new RatingTour(plugin, plots, leaderboard, this::onTourFinished);
+        List<Plot> built = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        for (Plot plot : plots.allPlots()) {
+            PlotCleaner.removeLooseEntities(plots.world(), plot);
+            if (PlotCleaner.isUntouched(plots.world(), plot)) {
+                skipped.add(Leaderboard.nameOf(plots.ownerOf(plot)));
+            } else {
+                built.add(plot);
+            }
+        }
+        if (!skipped.isEmpty()) {
+            Bukkit.getServer().sendMessage(Component.text(
+                    "Ohne Bauwerk, wird übersprungen: " + String.join(", ", skipped), NamedTextColor.GRAY));
+        }
+        if (built.isEmpty()) {
+            Bukkit.getServer().sendMessage(Component.text(
+                    "Niemand hat etwas gebaut, es gibt keine Bewertung.", NamedTextColor.GOLD));
+            resetPlotsAndGoToBox();
+            return;
+        }
+        tour = new RatingTour(plugin, plots, leaderboard, built, this::onTourFinished);
         tour.start();
     }
 
@@ -202,6 +260,7 @@ public final class GameManager {
         }
         pendingWork.add(() -> {
             plots.clearAll();
+            floors.clear();
             resetting = false;
             Bukkit.getServer().sendMessage(Component.text(
                     "Die Plots sind leer. Die nächste Runde beginnt mit /build.", NamedTextColor.GREEN));

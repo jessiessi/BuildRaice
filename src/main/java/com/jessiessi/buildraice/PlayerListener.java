@@ -40,6 +40,7 @@ public final class PlayerListener implements Listener {
                 player.teleport(plots.homeOf(plot));
             }
             player.setGameMode(GameMode.CREATIVE);
+            FloorSelector.giveTool(player);
         } else {
             game.assignPlot(player);
         }
@@ -49,12 +50,12 @@ public final class PlayerListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
-        Plot plot = plots.plotOf(player.getUniqueId());
-        if (plot == null || !game.isStarted() || !player.getWorld().equals(plots.world())) {
+        if (!game.isStarted() || !player.getWorld().equals(plots.world())) {
             return;
         }
-        // Zum Bewerten dürfen alle aus ihrem Plot heraus, die Flughöhe gilt weiter.
-        boolean confined = !game.isBuildingLocked();
+        // Beim Bauen bleibt jeder auf seinem Plot, bei der Bewertung alle auf dem besuchten Plot.
+        Plot plot = game.isBuildingLocked() ? game.viewedPlot() : plots.plotOf(player.getUniqueId());
+        boolean confined = plot != null;
         Location to = event.getTo();
         double x = confined ? plot.clampX(to.getX()) : to.getX();
         double y = Math.min(to.getY(), PlotGrid.MAX_FLY_Y);

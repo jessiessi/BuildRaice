@@ -6,37 +6,50 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
+import org.bukkit.FireworkEffect;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.entity.Firework;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Die Bewertung nach einer Runde: Alle werden von Plot zu Plot geschickt und stimmen mit den fünf
- * Blöcken in der Mitte der Hotbar ab, also mit den Tasten 3-7. Die Punkte kommen auf das Gesamtkonto
- * in der Sidebar.
+ * Die Bewertung nach einer Runde: Alle werden gemeinsam in zufälliger Reihenfolge auf die bebauten
+ * Plots gebracht und stimmen mit den fünf Blöcken in der Mitte der Hotbar ab, also mit den Tasten 3-7.
+ * Wem der Plot gehört, bleibt bis zum Ergebnis geheim. Die Punkte kommen auf das Gesamtkonto in der Sidebar.
  *
  * <p>Echter Spectator-Modus geht hier nicht: Dort öffnen die Zahlentasten das Spectator-Menü und der
- * Server erfährt nichts davon. Zuschauer sind deshalb im Adventure-Modus, fliegen und sind unsichtbar.
+ * Server erfährt nichts davon. Zuschauer sind deshalb im Adventure-Modus, fliegen und sind unverwundbar.
+ * Die Hand bleibt dabei leer: Der Tastendruck zählt als Stimme, der Slot springt aber zurück, sodass
+ * die anderen keinen Block in der Hand sehen.
  */
 public final class RatingTour {
 
     private static final int SECONDS_PER_PLOT = 30;
     /** Die Blöcke liegen mittig in den Slots 2-6 (Tasten 3-7). */
     private static final int FIRST_RATING_SLOT = 2;
-    /** Vor jedem Plot ist dieser leere Slot gewählt, sonst löst die Taste des aktuellen Slots nichts aus. */
+    /** Der leere Slot, der immer gewählt bleibt. */
     private static final int NEUTRAL_SLOT = 8;
+    /** Feuerwerk über dem Sieger-Plot: so viele Raketen, alle halbe Sekunde eine. */
+    private static final int FIREWORK_ROCKETS = 20;
+    private static final List<Color> FIREWORK_COLORS = List.of(Color.RED, Color.ORANGE, Color.YELLOW,
+            Color.LIME, Color.AQUA, Color.BLUE, Color.FUCHSIA, Color.WHITE);
     private static final List<Rating> RATINGS = List.of(
             new Rating("Schlecht", Material.RED_CONCRETE, NamedTextColor.RED),
             new Rating("Geht so", Material.ORANGE_CONCRETE, NamedTextColor.GOLD),
@@ -59,16 +72,20 @@ public final class RatingTour {
 
     private int index = -1;
     private int secondsLeft;
+    private int rocketsLeft;
     private BukkitTask task;
+    private BukkitTask fireworkTask;
     private Plot winner;
 
-    public RatingTour(JavaPlugin plugin, PlotManager plots, Leaderboard leaderboard, Runnable onFinished) {
+    /** @param toVisit die bebauten Plots, mindestens einer */
+    public RatingTour(JavaPlugin plugin, PlotManager plots, Leaderboard leaderboard, List<Plot> toVisit,
+                      Runnable onFinished) {
         this.plugin = plugin;
         this.plots = plots;
         this.leaderboard = leaderboard;
         this.onFinished = onFinished;
-        this.tour = new ArrayList<>(plots.allPlots());
-        this.tour.sort(Comparator.comparingInt(Plot::x).thenComparingInt(Plot::z));
+        this.tour = new ArrayList<>(toVisit);
+        Collections.shuffle(this.tour);
         this.bossBar = BossBar.bossBar(Component.empty(), 1f, BossBar.Color.GREEN, BossBar.Overlay.PROGRESS);
 
         for (Plot plot : tour) {
@@ -78,8 +95,7 @@ public final class RatingTour {
     }
 
     public void start() {
-        Bukkit.getServer().sendMessage(Component.text(
-                "Bewertung! Stimme mit den Tasten 3-7 ab: Taste 3 = schlecht (1 Punkt), Taste 7 = wunderschön (5 Punkte).", NamedTextColor.GOLD));
+        explain();
         Bukkit.getOnlinePlayers().forEach(this::prepareViewer);
         nextPlot();
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L);
@@ -89,23 +105,34 @@ public final class RatingTour {
         return winner == null;
     }
 
+    /** Der Plot, auf dem gerade alle stehen: der bewertete oder am Ende der Sieger-Plot. */
+    public Plot currentPlot() {
+        if (!isRunning()) {
+            return winner;
+        }
+        return index >= 0 && index < tour.size() ? tour.get(index) : null;
+    }
+
     /** Für Spieler, die während der Bewertung oder der Siegerehrung dazukommen. */
     public void addViewer(Player player) {
         prepareViewer(player);
-        player.teleport(viewpointOf(isRunning() ? tour.get(index) : winner));
-        player.setFlying(true);
+        Plot plot = currentPlot();
+        if (plot != null) {
+            player.teleport(viewpointOf(plot));
+            player.setFlying(true);
+        }
     }
 
     /** Eine Hotbar-Taste wurde gedrückt. Bis zum Ablauf der Zeit zählt die letzte Wahl. */
     public void vote(Player player, int slot) {
         int rating = slot - FIRST_RATING_SLOT;
-        if (!isRunning() || rating < 0 || rating >= RATINGS.size()) {
+        if (!isRunning() || index < 0 || rating < 0 || rating >= RATINGS.size()) {
             return;
         }
         UUID voter = player.getUniqueId();
         UUID owner = plots.ownerOf(tour.get(index));
         // Wer allein spielt, darf den eigenen Plot bewerten, sonst könnte es gar keine Punkte geben.
-        if (voter.equals(owner) && tour.size() > 1) {
+        if (voter.equals(owner) && Bukkit.getOnlinePlayers().size() > 1) {
             player.sendActionBar(Component.text("Deinen eigenen Plot kannst du nicht bewerten.", NamedTextColor.RED));
             return;
         }
@@ -115,6 +142,7 @@ public final class RatingTour {
                 + " mit " + points);
         player.sendActionBar(Component.text("Deine Wertung: " + RATINGS.get(rating).label() + " – "
                 + Leaderboard.pointsText(points), RATINGS.get(rating).color()));
+        giveRatingItems(player, rating);
     }
 
     /** Stoppt die Tour und nimmt den Spielern die Abstimm-Items und die Bossbar. */
@@ -123,10 +151,31 @@ public final class RatingTour {
             task.cancel();
             task = null;
         }
+        if (fireworkTask != null) {
+            fireworkTask.cancel();
+            fireworkTask = null;
+        }
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.hideBossBar(bossBar);
             player.getInventory().clear();
         }
+    }
+
+    private void explain() {
+        Bukkit.getServer().sendMessage(Component.text("--- Bewertung ---", NamedTextColor.GOLD));
+        Bukkit.getServer().sendMessage(Component.text(
+                "Ihr besucht alle bebauten Plots gemeinsam in zufälliger Reihenfolge. Wem der Plot gehört, "
+                        + "erfahrt ihr erst beim Ergebnis.", NamedTextColor.YELLOW));
+        Component keys = Component.text("Stimme mit den Tasten 3-7 ab: ", NamedTextColor.YELLOW);
+        for (int i = 0; i < RATINGS.size(); i++) {
+            Rating rating = RATINGS.get(i);
+            keys = keys.append(Component.text((i > 0 ? ", " : "") + (FIRST_RATING_SLOT + i + 1) + " = "
+                    + rating.label() + " (" + (i + 1) + ")", rating.color()));
+        }
+        Bukkit.getServer().sendMessage(keys);
+        Bukkit.getServer().sendMessage(Component.text(
+                "Pro Plot hast du " + SECONDS_PER_PLOT + " Sekunden, deine letzte Wahl zählt. Deinen eigenen Plot "
+                        + "kannst du nicht bewerten. Türen kannst du öffnen.", NamedTextColor.YELLOW));
     }
 
     private void tick() {
@@ -152,7 +201,7 @@ public final class RatingTour {
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(viewpoint);
             player.setFlying(true);
-            player.getInventory().setHeldItemSlot(NEUTRAL_SLOT);
+            giveRatingItems(player, -1);
         }
     }
 
@@ -201,7 +250,47 @@ public final class RatingTour {
             player.setFlying(true);
             player.showTitle(title);
         }
+        celebrate(winner);
         onFinished.run();
+    }
+
+    /** Feuerwerk an zufälligen Stellen über dem Sieger-Plot. */
+    private void celebrate(Plot plot) {
+        rocketsLeft = FIREWORK_ROCKETS;
+        fireworkTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (rocketsLeft-- <= 0) {
+                fireworkTask.cancel();
+                fireworkTask = null;
+                return;
+            }
+            launchRocket(plot);
+        }, 0L, 10L);
+    }
+
+    private void launchRocket(Plot plot) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        World world = plots.world();
+        int x = plot.minBlockX() + 2 + random.nextInt(PlotGrid.PLOT_SIZE - 4);
+        int z = plot.minBlockZ() + 2 + random.nextInt(PlotGrid.PLOT_SIZE - 4);
+        int y = Math.max(world.getHighestBlockYAt(x, z), PlotGrid.SURFACE_Y) + 1;
+        FireworkEffect.Type[] types = FireworkEffect.Type.values();
+        FireworkEffect effect = FireworkEffect.builder()
+                .with(types[random.nextInt(types.length)])
+                .withColor(randomColor(random), randomColor(random))
+                .withFade(randomColor(random))
+                .flicker(random.nextBoolean())
+                .trail(true)
+                .build();
+        world.spawn(new Location(world, x + 0.5, y, z + 0.5), Firework.class, firework -> {
+            FireworkMeta meta = firework.getFireworkMeta();
+            meta.addEffect(effect);
+            meta.setPower(1 + random.nextInt(2));
+            firework.setFireworkMeta(meta);
+        });
+    }
+
+    private static Color randomColor(ThreadLocalRandom random) {
+        return FIREWORK_COLORS.get(random.nextInt(FIREWORK_COLORS.size()));
     }
 
     private void prepareViewer(Player player) {
@@ -210,45 +299,47 @@ public final class RatingTour {
         player.setFlying(true);
         player.setInvulnerable(true);
         leaderboard.showTo(player);
-
-        PlayerInventory inventory = player.getInventory();
-        inventory.clear();
+        player.getInventory().clear();
         if (isRunning()) {
-            for (int rating = 0; rating < RATINGS.size(); rating++) {
-                inventory.setItem(FIRST_RATING_SLOT + rating, ratingItem(rating));
-            }
-            inventory.setHeldItemSlot(NEUTRAL_SLOT);
+            giveRatingItems(player, -1);
             player.showBossBar(bossBar);
-        }
-        for (Player other : Bukkit.getOnlinePlayers()) {
-            player.hidePlayer(plugin, other);
-            other.hidePlayer(plugin, player);
         }
     }
 
-    private static ItemStack ratingItem(int index) {
+    /** Legt die fünf Blöcke in die Hotbar-Mitte. Die gewählte Wertung leuchtet. */
+    private void giveRatingItems(Player player, int chosen) {
+        PlayerInventory inventory = player.getInventory();
+        for (int rating = 0; rating < RATINGS.size(); rating++) {
+            inventory.setItem(FIRST_RATING_SLOT + rating, ratingItem(rating, rating == chosen));
+        }
+        inventory.setHeldItemSlot(NEUTRAL_SLOT);
+    }
+
+    private static ItemStack ratingItem(int index, boolean chosen) {
         Rating rating = RATINGS.get(index);
         ItemStack item = new ItemStack(rating.material());
-        item.editMeta(meta -> meta.displayName(Component.text(rating.label() + " – " + Leaderboard.pointsText(index + 1), rating.color())
-                .decoration(TextDecoration.ITALIC, false)));
+        item.editMeta(meta -> {
+            meta.displayName(Component.text(rating.label() + " – " + Leaderboard.pointsText(index + 1), rating.color())
+                    .decoration(TextDecoration.ITALIC, false));
+            if (chosen) {
+                meta.setEnchantmentGlintOverride(true);
+            }
+        });
         return item;
     }
 
     private void updateBossBar() {
-        String owner = Leaderboard.nameOf(plots.ownerOf(tour.get(index)));
-        bossBar.name(Component.text(String.format("Plot von %s (%d/%d) – %02d:%02d",
-                owner, index + 1, tour.size(), secondsLeft / 60, secondsLeft % 60)));
+        bossBar.name(Component.text(String.format("Plot %d/%d – %02d:%02d",
+                index + 1, tour.size(), secondsLeft / 60, secondsLeft % 60)));
         bossBar.progress((float) secondsLeft / SECONDS_PER_PLOT);
     }
 
-    /** Standpunkt über dem Weg vor dem Plot, mit Blick schräg nach unten auf den Plot. */
+    /** Standpunkt am vorderen Plotrand, oben auf dem, was dort steht, mit Blick über den Plot. */
     private Location viewpointOf(Plot plot) {
-        return new Location(
-                plots.world(),
-                plot.minBlockX() + PlotGrid.PLOT_SIZE / 2.0,
-                PlotGrid.SURFACE_Y + 22,
-                plot.minBlockZ() - PlotGrid.ROAD_SIZE / 2.0,
-                0f,
-                30f);
+        World world = plots.world();
+        int x = plot.minBlockX() + PlotGrid.PLOT_SIZE / 2;
+        int z = plot.minBlockZ() + 1;
+        int y = Math.min(Math.max(world.getHighestBlockYAt(x, z), PlotGrid.SURFACE_Y) + 1, PlotGrid.MAX_FLY_Y);
+        return new Location(world, x + 0.5, y, z + 0.5, 0f, 20f);
     }
 }

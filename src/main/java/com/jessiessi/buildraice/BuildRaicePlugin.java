@@ -19,7 +19,7 @@ public final class BuildRaicePlugin extends JavaPlugin {
         World world = createWorld();
         PlotManager plots = new PlotManager(this, world);
         Leaderboard leaderboard = new Leaderboard(this);
-        game = new GameManager(this, plots, leaderboard);
+        game = new GameManager(this, plots, leaderboard, new Spectators(this));
 
         getServer().getPluginManager().registerEvents(new PlotProtectionListener(plots, game), this);
         getServer().getPluginManager().registerEvents(new PlayerListener(plots, game), this);
@@ -33,6 +33,8 @@ public final class BuildRaicePlugin extends JavaPlugin {
         Objects.requireNonNull(getCommand("build")).setExecutor(new BuildCommand(plots, game, leaderboard));
         Objects.requireNonNull(getCommand("ende")).setExecutor(new EndCommand(game));
         Objects.requireNonNull(getCommand("bestenliste")).setExecutor(new LeaderboardCommand(leaderboard));
+        Objects.requireNonNull(getCommand("spectate")).setExecutor(new SpectateCommand(game));
+        Objects.requireNonNull(getCommand("skip")).setExecutor(new SkipCommand(game));
     }
 
     @Override

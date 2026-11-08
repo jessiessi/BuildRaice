@@ -53,7 +53,7 @@ public final class BuildCommand implements CommandExecutor {
             return true;
         }
         List<Player> waiting = Bukkit.getOnlinePlayers().stream()
-                .filter(player -> plots.plotOf(player.getUniqueId()) == null)
+                .filter(player -> plots.plotOf(player.getUniqueId()) == null && !game.isSpectator(player))
                 .map(player -> (Player) player)
                 .toList();
         if (waiting.isEmpty() && !plots.hasPlots()) {

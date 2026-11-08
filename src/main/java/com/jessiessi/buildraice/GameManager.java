@@ -33,6 +33,7 @@ public final class GameManager {
     private final JavaPlugin plugin;
     private final PlotManager plots;
     private final Leaderboard leaderboard;
+    private final Spectators spectators;
     private final Deque<Runnable> pendingWork = new ArrayDeque<>();
     /** Plots mit geändertem Boden. Alle anderen haben noch Gras. */
     private final Map<Plot, Material> floors = new HashMap<>();
@@ -48,10 +49,11 @@ public final class GameManager {
     private BukkitTask resultTask;
     private RatingTour tour;
 
-    public GameManager(JavaPlugin plugin, PlotManager plots, Leaderboard leaderboard) {
+    public GameManager(JavaPlugin plugin, PlotManager plots, Leaderboard leaderboard, Spectators spectators) {
         this.plugin = plugin;
         this.plots = plots;
         this.leaderboard = leaderboard;
+        this.spectators = spectators;
         // Wände und Plot-Reihen werden portionsweise bearbeitet, damit der Server flüssig bleibt.
         this.workTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             Runnable work = pendingWork.poll();
@@ -83,6 +85,43 @@ public final class GameManager {
     /** Die aktuelle Bewertung oder null, solange gebaut werden darf. */
     public RatingTour tour() {
         return tour;
+    }
+
+    /** True für Spieler, die sich mit /spectate ausgeschlossen haben. */
+    public boolean isSpectator(Player player) {
+        return spectators.contains(player);
+    }
+
+    /** /spectate: schaltet zwischen Zuschauen und Mitspielen um. */
+    public void toggleSpectate(Player player) {
+        if (spectators.toggle(player.getUniqueId())) {
+            player.closeInventory();
+            player.getInventory().clear();
+            player.setInvulnerable(false);
+            player.setGameMode(GameMode.SPECTATOR);
+            player.sendMessage(Component.text(
+                    "Du schaust jetzt nur zu und machst nicht mit. Mit /spectate bist du wieder dabei.",
+                    NamedTextColor.GRAY));
+            return;
+        }
+        player.sendMessage(Component.text("Du machst wieder mit.", NamedTextColor.GREEN));
+        if (tour != null) {
+            tour.addViewer(player);
+        } else if (bossBar != null) {
+            // Während der Bauzeit gibt es den alten Plot zurück oder einen neuen.
+            assignPlot(player);
+        } else {
+            sendToBox(player);
+        }
+    }
+
+    /** /skip: beendet die Bewertung des gezeigten Plots sofort. */
+    public void skipPlot(CommandSender sender) {
+        if (tour == null || !tour.skip()) {
+            sender.sendMessage(Component.text("Gerade wird kein Plot bewertet.", NamedTextColor.RED));
+            return;
+        }
+        Bukkit.getServer().sendMessage(Component.text("Der Plot wurde übersprungen und bekommt keine Punkte.", NamedTextColor.GOLD));
     }
 
     /** Der Plot, auf dem während der Bewertung alle stehen, sonst null. */
@@ -132,10 +171,14 @@ public final class GameManager {
     /** Bringt den Spieler in die Box, ohne Zuschauer-Rechte und ohne Items aus der Runde. */
     public void sendToBox(Player player) {
         player.teleport(LobbyBox.spawn(plots.world()));
-        player.setGameMode(GameMode.ADVENTURE);
-        player.setAllowFlight(false);
         player.setInvulnerable(false);
         player.getInventory().clear();
+        if (isSpectator(player)) {
+            player.setGameMode(GameMode.SPECTATOR);
+            return;
+        }
+        player.setGameMode(GameMode.ADVENTURE);
+        player.setAllowFlight(false);
         Bukkit.getOnlinePlayers().forEach(other -> {
             other.showPlayer(plugin, player);
             player.showPlayer(plugin, other);
@@ -160,6 +203,9 @@ public final class GameManager {
     /** Bringt Spieler, die während der Runde oder Bewertung joinen, auf den aktuellen Stand. */
     public void onPlayerJoined(Player player) {
         leaderboard.showTo(player);
+        if (isSpectator(player)) {
+            player.setGameMode(GameMode.SPECTATOR);
+        }
         if (tour != null) {
             tour.addViewer(player);
             return;
@@ -212,9 +258,12 @@ public final class GameManager {
                 "Die Zeit ist um! Die Runde ist beendet.", NamedTextColor.GOLD));
         List<Plot> built = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
+        List<String> watching = new ArrayList<>();
         for (Plot plot : plots.allPlots()) {
             PlotCleaner.removeLooseEntities(plots.world(), plot);
-            if (PlotCleaner.isUntouched(plots.world(), plot)) {
+            if (spectators.contains(plots.ownerOf(plot))) {
+                watching.add(Leaderboard.nameOf(plots.ownerOf(plot)));
+            } else if (PlotCleaner.isUntouched(plots.world(), plot)) {
                 skipped.add(Leaderboard.nameOf(plots.ownerOf(plot)));
             } else {
                 built.add(plot);
@@ -224,13 +273,17 @@ public final class GameManager {
             Bukkit.getServer().sendMessage(Component.text(
                     "Ohne Bauwerk, wird übersprungen: " + String.join(", ", skipped), NamedTextColor.GRAY));
         }
+        if (!watching.isEmpty()) {
+            Bukkit.getServer().sendMessage(Component.text(
+                    "Schaut nur zu, wird übersprungen: " + String.join(", ", watching), NamedTextColor.GRAY));
+        }
         if (built.isEmpty()) {
             Bukkit.getServer().sendMessage(Component.text(
                     "Niemand hat etwas gebaut, es gibt keine Bewertung.", NamedTextColor.GOLD));
             resetPlotsAndGoToBox();
             return;
         }
-        tour = new RatingTour(plugin, plots, leaderboard, built, this::onTourFinished);
+        tour = new RatingTour(plugin, plots, leaderboard, spectators, built, this::onTourFinished);
         tour.start();
     }
 
@@ -262,8 +315,13 @@ public final class GameManager {
             plots.clearAll();
             floors.clear();
             resetting = false;
-            Bukkit.getServer().sendMessage(Component.text(
-                    "Die Plots sind leer. Die nächste Runde beginnt mit /build.", NamedTextColor.GREEN));
+            // Den Hinweis auf /build sehen nur die, die /build auch ausführen dürfen.
+            Component ready = Component.text("Die Plots sind leer. Die nächste Runde beginnt mit /build.",
+                    NamedTextColor.GREEN);
+            Bukkit.getOnlinePlayers().stream()
+                    .filter(player -> player.hasPermission("buildraice.build"))
+                    .forEach(player -> player.sendMessage(ready));
+            Bukkit.getConsoleSender().sendMessage(ready);
         });
     }
 

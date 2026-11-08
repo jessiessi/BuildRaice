@@ -32,7 +32,12 @@ public final class PlayerListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         Plot plot = plots.plotOf(player.getUniqueId());
-        if (!game.isStarted()) {
+        if (game.isSpectator(player)) {
+            // Zuschauer bekommen keinen Plot, vor der Runde warten sie in der Box.
+            if (!game.isStarted()) {
+                game.sendToBox(player);
+            }
+        } else if (!game.isStarted()) {
             game.sendToBox(player);
         } else if (plot != null) {
             // Rückkehrer bekommen ihren alten Plot zurück.
@@ -50,7 +55,7 @@ public final class PlayerListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
-        if (!game.isStarted() || !player.getWorld().equals(plots.world())) {
+        if (!game.isStarted() || !player.getWorld().equals(plots.world()) || game.isSpectator(player)) {
             return;
         }
         // Beim Bauen bleibt jeder auf seinem Plot, bei der Bewertung alle auf dem besuchten Plot.
@@ -87,7 +92,9 @@ public final class PlayerListener implements Listener {
     @EventHandler
     public void onChangedWorld(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
-        if (player.getWorld().equals(plots.world())) {
+        if (player.getWorld().equals(plots.world()) && game.isSpectator(player)) {
+            player.setGameMode(GameMode.SPECTATOR);
+        } else if (player.getWorld().equals(plots.world())) {
             boolean hasPlot = game.isStarted() && plots.plotOf(player.getUniqueId()) != null;
             player.setGameMode(hasPlot ? GameMode.CREATIVE : GameMode.ADVENTURE);
         } else if (event.getFrom().equals(plots.world())) {

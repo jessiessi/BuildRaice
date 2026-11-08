@@ -19,8 +19,17 @@ commands:
   bestenliste:
     description: Zeigt die Gesamtpunkte aller Runden
     usage: /bestenliste
+  spectate:
+    description: Nur zuschauen statt mitspielen, bis du /spectate erneut eingibst
+    usage: /spectate
+  skip:
+    description: Überspringt den gerade bewerteten Plot
+    usage: /skip
+    permission: buildraice.skip
 permissions:
   buildraice.build:
     default: op
   buildraice.ende:
+    default: op
+  buildraice.skip:
     default: op

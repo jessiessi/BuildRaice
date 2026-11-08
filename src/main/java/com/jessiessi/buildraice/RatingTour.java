@@ -63,6 +63,7 @@ public final class RatingTour {
     private final JavaPlugin plugin;
     private final PlotManager plots;
     private final Leaderboard leaderboard;
+    private final Spectators spectators;
     private final Runnable onFinished;
     private final List<Plot> tour;
     private final Map<Plot, Integer> roundPoints = new HashMap<>();
@@ -78,11 +79,12 @@ public final class RatingTour {
     private Plot winner;
 
     /** @param toVisit die bebauten Plots, mindestens einer */
-    public RatingTour(JavaPlugin plugin, PlotManager plots, Leaderboard leaderboard, List<Plot> toVisit,
-                      Runnable onFinished) {
+    public RatingTour(JavaPlugin plugin, PlotManager plots, Leaderboard leaderboard, Spectators spectators,
+                      List<Plot> toVisit, Runnable onFinished) {
         this.plugin = plugin;
         this.plots = plots;
         this.leaderboard = leaderboard;
+        this.spectators = spectators;
         this.onFinished = onFinished;
         this.tour = new ArrayList<>(toVisit);
         Collections.shuffle(this.tour);
@@ -123,16 +125,28 @@ public final class RatingTour {
         }
     }
 
+    /** /skip: der Plot bekommt keine Punkte, die bisherigen Stimmen verfallen, weiter geht es zum nächsten. */
+    public boolean skip() {
+        if (!isRunning() || index < 0 || index >= tour.size()) {
+            return false;
+        }
+        votes.clear();
+        commitVotes();
+        nextPlot();
+        return true;
+    }
+
     /** Eine Hotbar-Taste wurde gedrückt. Bis zum Ablauf der Zeit zählt die letzte Wahl. */
     public void vote(Player player, int slot) {
         int rating = slot - FIRST_RATING_SLOT;
-        if (!isRunning() || index < 0 || rating < 0 || rating >= RATINGS.size()) {
+        if (!isRunning() || index < 0 || rating < 0 || rating >= RATINGS.size() || spectators.contains(player)) {
             return;
         }
         UUID voter = player.getUniqueId();
         UUID owner = plots.ownerOf(tour.get(index));
-        // Wer allein spielt, darf den eigenen Plot bewerten, sonst könnte es gar keine Punkte geben.
-        if (voter.equals(owner) && Bukkit.getOnlinePlayers().size() > 1) {
+        // Wer allein mitspielt, darf den eigenen Plot bewerten, sonst könnte es gar keine Punkte geben.
+        long players = Bukkit.getOnlinePlayers().stream().filter(online -> !spectators.contains(online)).count();
+        if (voter.equals(owner) && players > 1) {
             player.sendActionBar(Component.text("Deinen eigenen Plot kannst du nicht bewerten.", NamedTextColor.RED));
             return;
         }
@@ -200,8 +214,10 @@ public final class RatingTour {
         Location viewpoint = viewpointOf(tour.get(index));
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(viewpoint);
-            player.setFlying(true);
-            giveRatingItems(player, -1);
+            if (!spectators.contains(player)) {
+                player.setFlying(true);
+                giveRatingItems(player, -1);
+            }
         }
     }
 
@@ -293,7 +309,16 @@ public final class RatingTour {
         return FIREWORK_COLORS.get(random.nextInt(FIREWORK_COLORS.size()));
     }
 
+    /** Zuschauer von /spectate bleiben im Spectator-Modus und bekommen keine Abstimm-Blöcke. */
     private void prepareViewer(Player player) {
+        if (spectators.contains(player)) {
+            player.setGameMode(GameMode.SPECTATOR);
+            leaderboard.showTo(player);
+            if (isRunning()) {
+                player.showBossBar(bossBar);
+            }
+            return;
+        }
         player.setGameMode(GameMode.ADVENTURE);
         player.setAllowFlight(true);
         player.setFlying(true);

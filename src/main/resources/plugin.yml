@@ -26,10 +26,16 @@ commands:
     description: Überspringt den gerade bewerteten Plot
     usage: /skip
     permission: buildraice.skip
+  stop:
+    description: Bricht die laufende Runde ab, alle zurück in die Box (in der Konsole fährt stop den Server herunter)
+    usage: /stop
+    permission: buildraice.stop
 permissions:
   buildraice.build:
     default: op
   buildraice.ende:
     default: op
   buildraice.skip:
+    default: op
+  buildraice.stop:
     default: op

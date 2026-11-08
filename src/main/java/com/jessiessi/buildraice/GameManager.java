@@ -115,6 +115,27 @@ public final class GameManager {
         }
     }
 
+    /**
+     * /stop: bricht die Runde ab, etwa nach einer falschen Zeitangabe. Die Runde zählt nicht, alle gehen
+     * zurück in die Box und die Plots werden geleert. Punkte früherer Runden bleiben.
+     */
+    public void abortRound(CommandSender sender) {
+        if (resetting) {
+            sender.sendMessage(Component.text("Die Plots werden gerade schon geleert.", NamedTextColor.YELLOW));
+            return;
+        }
+        if (!isRoundInProgress()) {
+            sender.sendMessage(Component.text("Es läuft gerade keine Runde.", NamedTextColor.RED));
+            return;
+        }
+        if (tour != null) {
+            tour.revertPoints();
+        }
+        Bukkit.getServer().sendMessage(Component.text(
+                "Die Runde wurde abgebrochen und zählt nicht. Alle zurück in die Box!", NamedTextColor.GOLD));
+        resetPlotsAndGoToBox();
+    }
+
     /** /skip: beendet die Bewertung des gezeigten Plots sofort. */
     public void skipPlot(CommandSender sender) {
         if (tour == null || !tour.skip()) {

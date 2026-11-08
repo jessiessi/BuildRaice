@@ -36,8 +36,8 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * <p>Echter Spectator-Modus geht hier nicht: Dort öffnen die Zahlentasten das Spectator-Menü und der
  * Server erfährt nichts davon. Zuschauer sind deshalb im Adventure-Modus, fliegen und sind unverwundbar.
- * Die Hand bleibt dabei leer: Der Tastendruck zählt als Stimme, der Slot springt aber zurück, sodass
- * die anderen keinen Block in der Hand sehen.
+ * Abgestimmt wird mit den Tasten 3-7 oder dem Mausrad. Den Block in der Hand sehen nur die Spieler
+ * selbst, die anderen bekommen eine leere Hand angezeigt (siehe RatingListener).
  */
 public final class RatingTour {
 
@@ -69,6 +69,8 @@ public final class RatingTour {
     private final Map<Plot, Integer> roundPoints = new HashMap<>();
     private final Map<Plot, Integer> gameTotals = new HashMap<>();
     private final Map<UUID, Integer> votes = new HashMap<>();
+    /** Bisher vergebene Punkte je Besitzer, damit /stop sie zurücknehmen kann. */
+    private final Map<UUID, Integer> awarded = new HashMap<>();
     private final BossBar bossBar;
 
     private int index = -1;
@@ -156,7 +158,15 @@ public final class RatingTour {
                 + " mit " + points);
         player.sendActionBar(Component.text("Deine Wertung: " + RATINGS.get(rating).label() + " – "
                 + Leaderboard.pointsText(points), RATINGS.get(rating).color()));
-        giveRatingItems(player, rating);
+        markChoice(player, rating);
+    }
+
+    /** /stop während der Bewertung: Die Runde zählt nicht, schon vergebene Punkte werden abgezogen. */
+    public void revertPoints() {
+        if (isRunning()) {
+            awarded.forEach((owner, points) -> leaderboard.add(owner, -points));
+            awarded.clear();
+        }
     }
 
     /** Stoppt die Tour und nimmt den Spielern die Abstimm-Items und die Bossbar. */
@@ -226,6 +236,7 @@ public final class RatingTour {
         int points = votes.values().stream().mapToInt(Integer::intValue).sum();
         roundPoints.put(plot, points);
         gameTotals.put(plot, leaderboard.add(plots.ownerOf(plot), points));
+        awarded.merge(plots.ownerOf(plot), points, Integer::sum);
     }
 
     private void finish() {
@@ -331,13 +342,18 @@ public final class RatingTour {
         }
     }
 
-    /** Legt die fünf Blöcke in die Hotbar-Mitte. Die gewählte Wertung leuchtet. */
+    /** Legt die fünf Blöcke in die Hotbar-Mitte und wählt den leeren Slot, damit die Hand leer ist. */
     private void giveRatingItems(Player player, int chosen) {
+        markChoice(player, chosen);
+        player.getInventory().setHeldItemSlot(NEUTRAL_SLOT);
+    }
+
+    /** Setzt die fünf Blöcke neu, die gewählte Wertung leuchtet. Der gewählte Slot bleibt, wie er ist. */
+    private void markChoice(Player player, int chosen) {
         PlayerInventory inventory = player.getInventory();
         for (int rating = 0; rating < RATINGS.size(); rating++) {
             inventory.setItem(FIRST_RATING_SLOT + rating, ratingItem(rating, rating == chosen));
         }
-        inventory.setHeldItemSlot(NEUTRAL_SLOT);
     }
 
     private static ItemStack ratingItem(int index, boolean chosen) {

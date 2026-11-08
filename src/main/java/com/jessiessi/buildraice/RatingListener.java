@@ -2,14 +2,17 @@ package com.jessiessi.buildraice;
 
 import io.papermc.paper.event.entity.EntityEquipmentChangedEvent;
 import io.papermc.paper.event.player.PlayerTrackEntityEvent;
+import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.inventory.EquipmentSlot;
@@ -17,7 +20,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Nimmt Hotbar-Tasten und Mausrad als Stimmen an und hält die Abstimm-Items an ihrem Platz.
+ * Hotbar-Tasten und Mausrad wählen eine Farbe, ein Linksklick loggt sie als Stimme ein. Die
+ * Abstimm-Items bleiben an ihrem Platz.
  * Den anderen Spielern wird die Hand dabei leer angezeigt, damit niemand die Wertung verrät.
  */
 public final class RatingListener implements Listener {
@@ -33,7 +37,26 @@ public final class RatingListener implements Listener {
     @EventHandler
     public void onHotbarKey(PlayerItemHeldEvent event) {
         if (game.tour() != null) {
-            game.tour().vote(event.getPlayer(), event.getNewSlot());
+            game.tour().preview(event.getPlayer(), event.getNewSlot());
+        }
+    }
+
+    /** Linksklick in die Luft oder auf einen Block. Kommt im Adventure-Modus schon abgebrochen an. */
+    @EventHandler
+    public void onLeftClick(PlayerInteractEvent event) {
+        if (game.tour() != null && event.getHand() == EquipmentSlot.HAND
+                && (event.getAction() == Action.LEFT_CLICK_AIR || event.getAction() == Action.LEFT_CLICK_BLOCK)) {
+            event.setCancelled(true);
+            game.tour().vote(event.getPlayer(), event.getPlayer().getInventory().getHeldItemSlot());
+        }
+    }
+
+    /** Linksklick auf einen anderen Spieler oder ein Entity zählt genauso. */
+    @EventHandler
+    public void onLeftClickEntity(PrePlayerAttackEntityEvent event) {
+        if (game.tour() != null) {
+            event.setCancelled(true);
+            game.tour().vote(event.getPlayer(), event.getPlayer().getInventory().getHeldItemSlot());
         }
     }
 

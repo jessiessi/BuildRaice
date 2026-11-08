@@ -76,13 +76,25 @@ public final class FloorSelector {
                 && item.getPersistentDataContainer().has(TOOL_KEY, PersistentDataType.BYTE);
     }
 
-    /** Legt den Farbstoff in den letzten Hotbar-Slot, falls der Spieler noch keinen hat. */
-    public static void giveTool(Player player) {
+    /**
+     * Sorgt dafür, dass der Spieler genau einen Farbstoff hat: Fehlt er, kommt er in den letzten
+     * Hotbar-Slot, Kopien werden entfernt.
+     */
+    public static void ensureTool(Player player) {
         PlayerInventory inventory = player.getInventory();
-        for (ItemStack item : inventory.getContents()) {
-            if (isTool(item)) {
-                return;
+        boolean found = isTool(player.getItemOnCursor());
+        ItemStack[] contents = inventory.getContents();
+        for (int slot = 0; slot < contents.length; slot++) {
+            if (isTool(contents[slot])) {
+                if (found) {
+                    inventory.setItem(slot, null);
+                } else {
+                    found = true;
+                }
             }
+        }
+        if (found) {
+            return;
         }
         ItemStack tool = new ItemStack(Material.RED_DYE);
         tool.editMeta(meta -> {
@@ -91,10 +103,9 @@ public final class FloorSelector {
                     .decoration(TextDecoration.ITALIC, false)));
             meta.getPersistentDataContainer().set(TOOL_KEY, PersistentDataType.BYTE, (byte) 1);
         });
-        if (inventory.getItem(TOOL_SLOT) == null) {
+        // Ist das Inventar voll, muss der Block im letzten Slot weichen.
+        if (inventory.getItem(TOOL_SLOT) == null || !inventory.addItem(tool).isEmpty()) {
             inventory.setItem(TOOL_SLOT, tool);
-        } else {
-            inventory.addItem(tool);
         }
     }
 

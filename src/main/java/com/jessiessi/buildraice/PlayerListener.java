@@ -45,7 +45,7 @@ public final class PlayerListener implements Listener {
                 player.teleport(plots.homeOf(plot));
             }
             player.setGameMode(GameMode.CREATIVE);
-            FloorSelector.giveTool(player);
+            FloorSelector.ensureTool(player);
         } else {
             game.assignPlot(player);
         }

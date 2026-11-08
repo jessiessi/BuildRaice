@@ -185,7 +185,7 @@ public final class GameManager {
         leaderboard.showTo(player);
         player.teleport(plots.homeOf(plot));
         player.setGameMode(GameMode.CREATIVE);
-        FloorSelector.giveTool(player);
+        FloorSelector.ensureTool(player);
         player.sendMessage(Component.text("Das ist dein Plot, nur hier kannst du bauen.", NamedTextColor.GREEN));
     }
 
@@ -270,6 +270,13 @@ public final class GameManager {
         }
         bossBar.name(title());
         bossBar.progress(Math.clamp((float) remaining / durationMillis, 0f, 1f));
+        // Der Farbstoff bleibt während der Bauzeit im Inventar, egal wie er verloren ging.
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (!isSpectator(player) && player.getGameMode() == GameMode.CREATIVE
+                    && plots.plotOf(player.getUniqueId()) != null && player.getWorld().equals(plots.world())) {
+                FloorSelector.ensureTool(player);
+            }
+        }
     }
 
     /** Die Wände bleiben bis zum Leeren stehen, bewertet werden nur bebaute Plots. */

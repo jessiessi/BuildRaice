@@ -36,7 +36,8 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * <p>Echter Spectator-Modus geht hier nicht: Dort öffnen die Zahlentasten das Spectator-Menü und der
  * Server erfährt nichts davon. Zuschauer sind deshalb im Adventure-Modus, fliegen und sind unverwundbar.
- * Abgestimmt wird mit den Tasten 3-7 oder dem Mausrad. Den Block in der Hand sehen nur die Spieler
+ * Mit den Tasten 3-7 oder dem Mausrad wählt man eine Farbe, gezählt wird sie erst nach einem Linksklick
+ * (einloggen). Den Block in der Hand sehen nur die Spieler
  * selbst, die anderen bekommen eine leere Hand angezeigt (siehe RatingListener).
  */
 public final class RatingTour {
@@ -138,7 +139,17 @@ public final class RatingTour {
         return true;
     }
 
-    /** Eine Hotbar-Taste wurde gedrückt. Bis zum Ablauf der Zeit zählt die letzte Wahl. */
+    /** Eine Farbe wurde ausgewählt, aber noch nicht eingeloggt: nur ein Hinweis, keine Stimme. */
+    public void preview(Player player, int slot) {
+        int rating = slot - FIRST_RATING_SLOT;
+        if (!isRunning() || index < 0 || rating < 0 || rating >= RATINGS.size() || spectators.contains(player)) {
+            return;
+        }
+        player.sendActionBar(Component.text(RATINGS.get(rating).label() + " – "
+                + Leaderboard.pointsText(rating + 1) + ": Linksklick zum Einloggen", RATINGS.get(rating).color()));
+    }
+
+    /** Linksklick mit einer Farbe in der Hand loggt die Stimme ein. Bis zum Ablauf der Zeit zählt die letzte. */
     public void vote(Player player, int slot) {
         int rating = slot - FIRST_RATING_SLOT;
         if (!isRunning() || index < 0 || rating < 0 || rating >= RATINGS.size() || spectators.contains(player)) {
@@ -156,7 +167,7 @@ public final class RatingTour {
         votes.put(voter, points);
         plugin.getLogger().info(player.getName() + " bewertet den Plot von " + Leaderboard.nameOf(owner)
                 + " mit " + points);
-        player.sendActionBar(Component.text("Deine Wertung: " + RATINGS.get(rating).label() + " – "
+        player.sendActionBar(Component.text("Eingeloggt: " + RATINGS.get(rating).label() + " – "
                 + Leaderboard.pointsText(points), RATINGS.get(rating).color()));
         markChoice(player, rating);
     }
@@ -190,7 +201,7 @@ public final class RatingTour {
         Bukkit.getServer().sendMessage(Component.text(
                 "Ihr besucht alle bebauten Plots gemeinsam in zufälliger Reihenfolge. Wem der Plot gehört, "
                         + "erfahrt ihr erst beim Ergebnis.", NamedTextColor.YELLOW));
-        Component keys = Component.text("Stimme mit den Tasten 3-7 ab: ", NamedTextColor.YELLOW);
+        Component keys = Component.text("Wähle mit den Tasten 3-7 oder dem Mausrad eine Farbe: ", NamedTextColor.YELLOW);
         for (int i = 0; i < RATINGS.size(); i++) {
             Rating rating = RATINGS.get(i);
             keys = keys.append(Component.text((i > 0 ? ", " : "") + (FIRST_RATING_SLOT + i + 1) + " = "
@@ -198,8 +209,9 @@ public final class RatingTour {
         }
         Bukkit.getServer().sendMessage(keys);
         Bukkit.getServer().sendMessage(Component.text(
-                "Pro Plot hast du " + SECONDS_PER_PLOT + " Sekunden, deine letzte Wahl zählt. Deinen eigenen Plot "
-                        + "kannst du nicht bewerten. Türen kannst du öffnen.", NamedTextColor.YELLOW));
+                "Mit Linksklick loggst du die Farbe ein, erst dann zählt sie. Pro Plot hast du " + SECONDS_PER_PLOT
+                        + " Sekunden, die zuletzt eingeloggte Farbe zählt. Deinen eigenen Plot kannst du nicht bewerten. "
+                        + "Türen kannst du öffnen.", NamedTextColor.YELLOW));
     }
 
     private void tick() {

@@ -1,4 +1,4 @@
-# BuildRaice
+# BuildRace
 
 Ein Bau-Wettbewerb als Paper-Plugin: Alle bekommen dasselbe Thema und eine feste Zeit, danach werden
 die Bauwerke reihum bewertet. Gespielt werden beliebig viele Runden, die Punkte werden zusammengezählt.
